@@ -112,6 +112,23 @@ else
     echo "⚠️ env.js 未找到，跳过占位符替换"
 fi
 
+# Ensure env.js is referenced with an absolute path so nested SPA routes don't request
+# relative paths like /dify-chat/app/env.js which do not exist. Update both the
+# deployed HTML and the dist HTML (so a fresh build + sync won't re-introduce the issue).
+echo "🔧 确保 HTML 使用绝对 env.js 路径 /dify-chat/env.js ..."
+if [ -f "$TARGET_DIR/index.html" ]; then
+    sed -i 's|src="./env.js"|src="/dify-chat/env.js"|g' "$TARGET_DIR/index.html" || true
+fi
+if [ -f "$TARGET_DIR/template.html" ]; then
+    sed -i 's|src="./env.js"|src="/dify-chat/env.js"|g' "$TARGET_DIR/template.html" || true
+fi
+if [ -f "packages/react-app/dist/index.html" ]; then
+    sed -i 's|src="./env.js"|src="/dify-chat/env.js"|g' packages/react-app/dist/index.html || true
+fi
+if [ -f "packages/react-app/dist/template.html" ]; then
+    sed -i 's|src="./env.js"|src="/dify-chat/env.js"|g' packages/react-app/dist/template.html || true
+fi
+
 # 配置 Platform 环境
 echo "⚙️ 配置 Platform 环境..."
 cd packages/platform
