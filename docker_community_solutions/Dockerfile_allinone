@@ -7,31 +7,32 @@ WORKDIR /app
 # Copy the rest of the application code to the working directory
 COPY . .
 
-# Install pnpm globally and install project dependencies
-RUN npm install -g pnpm pm2
+############################
+# System dependencies first
+############################
+# Install system dependencies needed for building native modules (better-sqlite3) and runtime
+RUN rm -f /etc/apt/sources.list.d/* && \
+        echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm main contrib non-free" > /etc/apt/sources.list && \
+        echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
+        echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm-backports main contrib non-free" >> /etc/apt/sources.list && \
+        echo "deb https://mirrors.ustc.edu.cn/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list && \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential python3 libsqlite3-dev \
+            nginx curl && \
+        rm -rf /var/lib/apt/lists/*
 
-# Set pnpm registry to a faster mirror
-RUN pnpm config set registry https://registry.npmmirror.com/
+# Install pnpm and pm2 globally
+RUN npm install -g pnpm pm2 && pnpm config set registry https://registry.npmmirror.com/
+ENV PYTHON=/usr/bin/python3
 
 # Fix changesets version if it's set to "catalog:"
 RUN if grep -q '"@changesets/cli": "catalog:"' package.json; then \
     sed -i 's/"@changesets\/cli": "catalog:"/"@changesets\/cli": "^2.29.6"/' package.json; \
     fi
 
-# Install dependencies using pnpm
+# Install dependencies using pnpm (now that build deps are present)
 RUN pnpm install --no-frozen-lockfile
-
-# Replace apt sources with a faster mirror (USTC)
-RUN rm -f /etc/apt/sources.list.d/* && \
-    echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm main contrib non-free" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.ustc.edu.cn/debian/ bookworm-backports main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.ustc.edu.cn/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list
-
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y nginx curl && \
-    rm -rf /var/lib/apt/lists/*
 
 # Build the base packages
 RUN pnpm build:pkgs
@@ -45,9 +46,8 @@ RUN cd packages/react-app && \
     pnpm build && \
     cd ../..
 
-# Generate Prisma client, push database schema, and build the backend
+# Build the backend (Next.js standalone). We rely on TypeORM to auto-sync schema at runtime.
 RUN cd packages/platform && \
-    pnpm prisma generate && pnpm prisma db push && \
     pnpm build && \
     cd ../..
 
@@ -66,9 +66,10 @@ RUN mkdir -p logs && \
         echo '    cwd: "./packages/platform",' >> ecosystem.config.js && \
         echo '    script: "pnpm",' >> ecosystem.config.js && \
         echo '    args: "start",' >> ecosystem.config.js && \
-        echo '    env: {' >> ecosystem.config.js && \
-        echo '      NODE_ENV: "production",' >> ecosystem.config.js && \
-        echo '      PORT: 5300' >> ecosystem.config.js && \
+    echo '    env: {' >> ecosystem.config.js && \
+    echo '      NODE_ENV: "production",' >> ecosystem.config.js && \
+    echo '      PORT: 5300,' >> ecosystem.config.js && \
+    echo '      DB_AUTO_SYNC: "true"' >> ecosystem.config.js && \
         echo '    },' >> ecosystem.config.js && \
         echo '    instances: 1,' >> ecosystem.config.js && \
         echo '    exec_mode: "fork",' >> ecosystem.config.js && \
@@ -88,19 +89,22 @@ RUN mkdir -p logs && \
 # Expose the application port
 EXPOSE 5300 80
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-# 启动 Nginx\n\
-nginx -g "daemon off;" &\n\
-# 启动 Node.js 后端（PM2）\n\
-pm2-runtime ecosystem.config.js' > /app/start.sh
-
-# Make the startup script executable
-RUN chmod +x /app/start.sh
+# If there's no /app/start.sh present from a bind mount, create one that tails logs
+RUN if [ ! -f /app/start.sh ]; then \
+    echo '#!/bin/bash' > /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Start nginx in background (if installed)' >> /app/start.sh && \
+    echo 'if command -v nginx >/dev/null 2>&1; then' >> /app/start.sh && \
+    echo '  nginx || true' >> /app/start.sh && \
+    echo 'fi' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Then keep container alive by tailing platform logs' >> /app/start.sh && \
+    echo 'tail -f /app/logs/platform-combined.log || tail -f /dev/null' >> /app/start.sh; \
+    fi && chmod +x /app/start.sh
 
 # Define health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:5300/ || curl -f http://localhost/dify-chat/index.html || exit 1
 
-# Start the application
-CMD ["/app/start.sh"]
+# Start the application using bash to run prod-start.sh (setup) and then the persistent /app/start.sh to keep container alive
+CMD ["/bin/bash", "-c", "/app/prod-start.sh && /app/start.sh"]

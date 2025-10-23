@@ -265,13 +265,35 @@ export default function WorkflowLayout(props: IWorkflowLayoutProps) {
 					<Button
 						type="primary"
 						onClick={async () => {
-							await entryForm.validateFields()
-							const values = await entryForm.getFieldsValue()
-							setResultDetail({})
-							setWorkflowItems([])
-							setWorkflowStatus('running')
-							setText('')
-							handleTriggerWorkflow(values)
+							// Pre-validate single-checkbox required fields because
+							// valuePropName + required rule may be flaky for boolean checked values.
+							try {
+								const valuesBefore = entryForm.getFieldsValue()
+								const userInputForm = currentApp?.parameters?.user_input_form || []
+								for (const item of userInputForm) {
+									const fieldType = Object.keys(item)[0]
+									const fieldInfo = Object.values(item)[0] as any
+									if (fieldType === 'checkbox' && fieldInfo.required) {
+										const varName = fieldInfo.variable
+										const val = valuesBefore[varName]
+										// Accept explicit true/false as provided. Only undefined/null is missing.
+										if (val === undefined || val === null) {
+											message.error(`${fieldInfo.label}不能为空`)
+											return
+										}
+									}
+								}
+								await entryForm.validateFields()
+								const values = await entryForm.getFieldsValue()
+								setResultDetail({})
+								setWorkflowItems([])
+								setWorkflowStatus('running')
+								setText('')
+								handleTriggerWorkflow(values)
+							} catch (err) {
+								// Let Antd show validation errors
+								return
+							}
 						}}
 						loading={workflowStatus === 'running'}
 					>

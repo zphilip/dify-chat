@@ -2,7 +2,7 @@ import { DifyApi, IUserInputFormItemType, IUserInputFormItemValueBase } from '@d
 import { AppModeEnums, useAppContext } from '@dify-chat/core'
 import { useConversationsContext } from '@dify-chat/core'
 import { isTempId, unParseGzipString } from '@dify-chat/helpers'
-import { Form, FormInstance, FormItemProps, Input, InputNumber, message, Select } from 'antd'
+import { Form, FormInstance, FormItemProps, Input, InputNumber, message, Select, Checkbox } from 'antd'
 import { useHistory, useSearchParams } from 'pure-react-router'
 import { useEffect, useRef, useState } from 'react'
 
@@ -16,7 +16,15 @@ export type IConversationEntryFormItem = FormItemProps &
 		type: IUserInputFormItemType
 	}
 
-const SUPPORTED_CONTROL_TYPES = ['text-input', 'select', 'number', 'paragraph', 'file', 'file-list']
+const SUPPORTED_CONTROL_TYPES = [
+	'text-input',
+	'select',
+	'number',
+	'paragraph',
+	'file',
+	'file-list',
+	'checkbox',
+]
 
 export interface IAppInputFormProps {
 	/**
@@ -67,7 +75,7 @@ export default function AppInputForm(props: IAppInputFormProps) {
 				const fieldType = Object.keys(item)[0]
 				const fieldInfo = Object.values(item)[0]
 				const originalProps = fieldInfo
-				const baseProps: IConversationEntryFormItem = {
+					const baseProps: IConversationEntryFormItem = {
 					type: fieldType as IUserInputFormItemType,
 					label: originalProps.label,
 					name: originalProps.variable,
@@ -143,6 +151,19 @@ export default function AppInputForm(props: IAppInputFormProps) {
 						entryForm.setFieldValue(originalProps.variable, undefined)
 					}
 				}
+				// For single checkbox controls, ensure there's an explicit initial value (false)
+				// and later render will use a custom validator that requires checked === true if required.
+				if ((originalProps.type as unknown as string) === 'checkbox') {
+					// If the form currently has no value for this checkbox, initialize it to false
+					try {
+						const existing = entryForm.getFieldValue(originalProps.variable)
+						if (existing === undefined) {
+							entryForm.setFieldValue(originalProps.variable, false)
+						}
+					} catch (e) {
+						// ignore if form not ready
+					}
+				}
 				if (originalProps.required) {
 					baseProps.required = true
 					baseProps.rules = [{ required: true, message: '请输入' }]
@@ -187,6 +208,8 @@ export default function AppInputForm(props: IAppInputFormProps) {
 						{userInputItems
 							.filter(item => SUPPORTED_CONTROL_TYPES.includes(item.type))
 							.map(item => {
+								const isSingleCheckbox = (item.type as unknown as string) === 'checkbox' && (!item.options || item.options.length === 0)
+								const valuePropName = isSingleCheckbox ? 'checked' : undefined
 								return (
 									<Form.Item
 										key={item.name}
@@ -194,15 +217,28 @@ export default function AppInputForm(props: IAppInputFormProps) {
 										label={item.label}
 										required={item.required}
 										hidden={item.hidden}
+										valuePropName={valuePropName}
 										rules={
 											item.required
-												? [
+												? (
+													isSingleCheckbox
+														? [
+																{
+																	validator: (_rule, value) => {
+																		// Treat boolean (true/false) as a provided value. Only undefined/null should be considered missing.
+																		if (value === false || value === true) return Promise.resolve()
+																		return Promise.reject(new Error(`${item.label}不能为空`))
+																	},
+																	},
+																	]
+													: [
 														{
 															required: true,
 															message: `${item.label}不能为空`,
 														},
-													]
-												: []
+														]
+											)
+											: []
 										}
 									>
 										{item.type === 'text-input' ? (
@@ -250,6 +286,17 @@ export default function AppInputForm(props: IAppInputFormProps) {
 												allowed_file_types={item.allowed_file_types || []}
 												uploadFileApi={uploadFileApi}
 											/>
+										) : item.type === 'checkbox' ? (
+											// If options provided, render a Checkbox.Group for multiple choices
+											item.options && item.options.length ? (
+												<Checkbox.Group
+													disabled={disabled}
+													options={item.options.map(opt => ({ label: opt, value: opt }))}
+												/>
+											) : (
+												// Otherwise render a single checkbox bound to a boolean
+												<Checkbox disabled={disabled} />
+											)
 										) : (
 											`暂不支持的控件类型: ${item.type}`
 										)}

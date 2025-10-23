@@ -11,6 +11,20 @@ http {
         server_name localhost;
         root /app/html;  # 设置根目录
 
+        # 反向代理 API 到平台服务，保持同源
+        location /api/ {
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            proxy_connect_timeout 60s;
+            proxy_pass http://127.0.0.1:5300/api/;
+        }
+
         # 处理所有请求（包括 /dify-chat/）
         location / {
             # 对于 SPA 应用，确保所有路由都返回 index.html

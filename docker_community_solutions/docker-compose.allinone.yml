@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  dify-chat:
+    build:
+      context: ..
+      dockerfile: ./docker_community_solutions/Dockerfile_allinone
+    image: dify-chat:0.5.5
+    container_name: dify-chat-allinone
+    restart: unless-stopped
+    tty: true
+    environment:
+      # Backend runtime
+      NODE_ENV: production
+      PORT: "5300"
+      # Use embedded SQLite (no external DB). Persist at /app/data/dify_chat.db
+      # DATABASE_URL=postgresql://username:password@host:port/database_name
+      DATABASE_URL: file:/app/data/dify_chat.db
+      # Secrets (change for production)
+      # Use POSIX-style interpolation supported by docker-compose: ${VAR:-default}
+      # If you prefer to require the variable to be set, use: NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-h0lcrGVxvN0+W049s05NB7kW6DSbk84nIDuiTFrKa9U=}
+      # NOTE: Frontend envs are baked at build time in this Dockerfile. If you need different API bases,
+      # either edit docker_community_solutions/env-frontend.example and rebuild, or add a proxy rule in nginx.conf.example.
+      PUBLIC_APP_API_BASE: /api/client
+      PUBLIC_DIFY_PROXY_API_BASE: /api/client/dify
+    ports:
+      - "80:80"    # Nginx (frontend)
+      - "5300:5300"  # Next.js Platform API
+    depends_on: {}
+    # Bind mount the host repository so edits inside the container persist to the host
+    volumes:
+      - ..:/app:cached
+    networks:
+      - dify-chat-network
+
+  # No external database service needed when using SQLite
+
+volumes: {}
+
+networks:
+  dify-chat-network:
+    driver: bridge
