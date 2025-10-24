@@ -1,7 +1,7 @@
 import { GithubOutlined } from '@ant-design/icons'
 import { Button } from 'antd'
 
-import LogoImage from '@/assets/images/logo.png'
+import LogoImage from '@/assets/images/logo.svg'
 
 export const LogoIcon = () => {
 	return (
@@ -64,7 +64,7 @@ export const Logo = (props: ILogoProps) => {
 				)}
 				{!hideText ? (
 					<span className="inline-block my-0 ml-3 font-bold text-lg text-theme-text">
-						{text || 'Dify Chat'}
+						{text || 'AIWORM Flows'}
 					</span>
 				) : null}
 			</div>
